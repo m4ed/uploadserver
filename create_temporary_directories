@@ -1,0 +1,11 @@
+#!/bin/sh
+
+for i in $(seq 0 9)
+do
+  if [ -d /tmp/$i ]; then
+    rmdir /tmp/$i
+  fi
+  mkdir -m777 /tmp/$i
+  echo "/tmp/$i created..."
+  #chown nobody:nogroup /tmp/$i
+done
