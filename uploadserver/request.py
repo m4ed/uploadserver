@@ -18,3 +18,15 @@ class CustomRequestFactory(Request):
     @reify
     def fs(self):
         return GridFS(self.db)
+
+    @reify
+    def cloud(self):
+        return self.registry.settings['cloud']
+
+    @reify
+    def upload_queue(self):
+        return self.registry.settings['zmq.upload_queue']
+
+    @reify
+    def imager(self):
+        return self.registry.settings['imager']
