@@ -27,54 +27,47 @@ def upload(request):
         finally:
             os.unlink(file_path)
 
-        res = []
-
         if len(save_results) == 0:
             return {'result': 'error', 'why': 'filetype not allowed'}
 
-        for r in save_results:
-            print r
+        r = save_results
 
-            data = dict(
-                size=r.get('size'),
-                name=r.get('name'),
-                delete_url='',
-                delete_type='DELETE',
-                type=r.get('type'),
-                format=r.get('format'),
-                desc='This is an image',
-                id=r.get('id')
-            )
+        data = dict(
+            size=r.get('size'),
+            name=r.get('name'),
+            delete_url='/api/assets/{}'.format('id'),
+            delete_type='DELETE',
+            type=r.get('type'),
+            format=r.get('format'),
+            desc='This is an image',
+            id=r.get('id')
+        )
 
-            frames = r.get('frames')
-            if frames:
-                data['frames'] = frames
+        frames = r.get('frames')
+        if frames:
+            data['frames'] = frames
 
-            res.append(data)
+        #if settings['store_locally']:
+        resource_uri = settings['resource_uri']
+        dir_name = r.get('name').rsplit('.', 1)[0]
+        data['url'] = (resource_uri +
+            '/{directory}/{full}').format(
+            directory=dir_name,
+            full=r.get('full')
+        )
+        data['thumbnail_url'] = (resource_uri +
+            '/{directory}/{thumb}').format(
+            directory=dir_name,
+            thumb=r.get('thumb')
+        )
 
-            #if settings['store_locally']:
-            resource_uri = settings['resource_uri']
-            dir_name = r.get('name').rsplit('.', 1)[0]
-            data['url'] = (resource_uri +
-                '/{directory}/{full}').format(
-                directory=dir_name,
-                full=r.get('full')
-            )
-            data['thumbnail_url'] = (resource_uri +
-                '/{directory}/{thumb}').format(
-                directory=dir_name,
-                thumb=r.get('thumb')
-            )
-
-        request.db.assets.insert(res)
+        _id = request.db.assets.insert(data, safe=True)
 
         # The _id gets added into the response dictionary when mongo inserts
         # the res into the collection. Remove them since we don't want them
         # in our response but send them to upload_queue to be processed
-        store_locally = settings['store_locally']
-        for r in res:
-            if not store_locally:
-                request.upload_queue.send('save:' + str(r['_id']))
-            del r['_id']  # = str(r['_id'])
+        if not settings['store_locally']:
+            request.upload_queue.send('save:' + str(_id))
+        #del r['_id']  # = str(r['_id'])
 
-    return res
+    return r

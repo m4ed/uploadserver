@@ -49,7 +49,7 @@ class ImageProcessor(object):
             format=im.format
         ))
 
-        return [result]
+        return result
 
 
 def _iter_frames(im):

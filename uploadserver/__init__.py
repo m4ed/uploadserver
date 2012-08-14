@@ -28,7 +28,7 @@ def main(global_config, **settings):
     config.registry.settings['db.mongo.conn'] = db_conn
 
     upload_queue = zmq.Context().socket(zmq.PUSH)
-    upload_queue.bind(settings['zmq.socket'])
+    upload_queue.connect(settings['zmq.socket'])
     config.registry.settings['zmq.upload_queue'] = upload_queue
 
     db_name = config.registry.settings['db.mongo.collection_name']
