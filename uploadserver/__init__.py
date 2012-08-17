@@ -1,5 +1,8 @@
 from pyramid.config import Configurator
+from pyramid.authentication import AuthTktAuthenticationPolicy
+from pyramid.authorization import ACLAuthorizationPolicy
 
+from pyramid_beaker import session_factory_from_settings
 import pymongo
 import zmq
 
@@ -12,10 +15,26 @@ def main(global_config, **settings):
     """ This function returns a Pyramid WSGI application.
     """
 
+    session_factory = session_factory_from_settings(settings)
+    #UnencryptedCookieSessionFactoryConfig('itsaseekreet')
+
+    #print session_factory
+
+    authn_policy = AuthTktAuthenticationPolicy(
+        'supersecretstring',
+        callback=lambda x, y: ['g:superuser']  # TODO: Implement a group finder
+    )
+
+    authz_policy = ACLAuthorizationPolicy()
+
     config = Configurator(
         settings=settings,
-        request_factory=CustomRequestFactory
-        )
+        authentication_policy=authn_policy,
+        authorization_policy=authz_policy,
+        session_factory=session_factory,
+        request_factory=CustomRequestFactory,
+        root_factory='m4ed.factories:RootFactory'
+    )
 
     config.registry.settings['assets'] = parse_asset_settings(settings)
 
@@ -37,7 +56,15 @@ def main(global_config, **settings):
         db=db_conn[db_name], image_save_path=asset_settings['save_path'])
 
     config.add_static_view('static', 'static', cache_max_age=3600)
-    config.add_route('home', '/')
-    config.add_route('upload', '/upload')
+    config.include(api, route_prefix='/api')
     config.scan()
     return config.make_wsgi_app()
+
+
+def api(config):
+    config.include(asset_api, route_prefix='/assets')
+
+
+def asset_api(config):
+    config.add_route('rest_assets', '/', factory='m4ed.factories:AssetFactory')
+    config.add_route('rest_asset', '/{id}', factory='m4ed.factories:AssetFactory', traverse='/{id}')

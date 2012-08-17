@@ -4,23 +4,19 @@ import os
 
 
 class Cloud(object):
-
-    def __init__(self, **settings):
-        #print settings
-        #raise SystemExit
-        self.service = '_' + settings.pop('service')
-        self.username = settings.pop('username')
-        self.api_key = settings.pop('api_key')
+    def __init__(self, service, username, api_key, **settings):
+        self.username = username
+        self.api_key = api_key
+        self.ssl = settings.pop('ssl', False)
         self.container_name = settings.pop('container_name')
         self.connpool = None
 
-        self._cloudfiles(self.username, self.api_key)
 
-        if self.connpool:
-            print 'Connection to cloud initialized'
-            print
+class CloudFiles(Cloud):
+    def connect(self, servicenet=False):
+        username = self.username
+        api_key = self.api_key
 
-    def _cloudfiles(self, username, api_key, servicenet=False):
         self.connpool = cloudfiles.ConnectionPool(
             username, api_key, servicenet=servicenet)
         self.container = self._get_container(self.container_name)
@@ -42,18 +38,20 @@ class Cloud(object):
         self._release_connection(conn)
         return container
 
-    def save(self, path, ssl=False):
+    def save(self, path, _type, format):
+        ssl = self.ssl
         name = os.path.basename(path)
-        o = self.container.create_object(name)
-        file_extension = name.rsplit('.', 1)[-1]
-        print 'Saving the image with file extension image/' + file_extension
-        o.content_type = 'image/' + file_extension
+        obj = self.container.create_object(name)
+        #file_extension = name.rsplit('.', 1)[-1]
+        #print 'Saving the image with file extension image/' + file_extension
+        obj.content_type = _type + '/' + format.lower()
+        print obj.content_type
         with open(path, 'rb') as f:
-            o.write(f)
+            obj.write(f)
         if not ssl:
-            return o.public_uri()
+            return obj.public_uri()
         else:
-            return o.public_ssl_uri()
+            return obj.public_ssl_uri()
 
     def delete(self, *args, **kwargs):
         self.container.delete_object(*args, **kwargs)

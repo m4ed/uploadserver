@@ -1,7 +1,5 @@
-from pyramid.path import AssetResolver
+from pyramid.path import AssetResolver, DottedNameResolver
 # ConfigParser renamed to configparser in python 3.0
-import os
-
 try:
     import configparser
 except ImportError:
@@ -18,27 +16,36 @@ def no_option_catcher(original_function):
     return catcher
 
 
-@no_option_catcher
 def parse_asset_settings(settings):
-    config = configparser.ConfigParser()
-    r = AssetResolver()
+    config = configparser.SafeConfigParser()
+    asset_resolver = AssetResolver()
+    dotted_resolver = DottedNameResolver()
+
+    asset_config = settings.get('assets.config')
+    print asset_config
     try:
-        s = r.resolve(settings.get('assets.config')).abspath()
+        s = asset_resolver.resolve(asset_config).abspath()
         config.read(s)
     except AttributeError:
+        raise
+
+    try:
+        store_locally = config.getboolean('assets', 'store_locally')
+    except configparser.NoSectionError:
         try:
-            with open(settings) as fp:
+            with open(asset_config) as fp:
                 config.readfp(fp)
         except IOError:
             raise
+        else:
+            store_locally = config.getboolean('assets', 'store_locally')
 
-    store_locally = config.getboolean('assets', 'store_locally')
     result = dict(
         store_locally=store_locally,
-        tmp_path=r.resolve(config.get('assets', 'tmp_path')).abspath(),
-        save_path=r.resolve(config.get('assets', 'save_path')).abspath()
+        tmp_path=asset_resolver.resolve(config.get('assets', 'tmp_path')).abspath(),
+        save_path=asset_resolver.resolve(config.get('assets', 'save_path')).abspath()
     )
-#if (store_locally):
+
     c = config.items('assets:local')
 
     for key, value in c:
@@ -48,7 +55,7 @@ def parse_asset_settings(settings):
             result[key] = value
             continue
         try:
-            value = r.resolve(value).abspath()
+            value = asset_resolver.resolve(value).abspath()
         except ValueError:
             # This gets raised if the name isn't in dotted notation
             pass
@@ -57,9 +64,11 @@ def parse_asset_settings(settings):
             pass
         finally:
             result[key] = value
-    #else:
-    c = config.items('assets:cloud')
-    result.update(c)
+
+    if not store_locally:
+        c = dict(config.items('assets:cloud'))
+        c['service'] = dotted_resolver.resolve(c.get('service'))
+        result.update(c)
 
     return result
 

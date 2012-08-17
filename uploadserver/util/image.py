@@ -1,7 +1,7 @@
 from PIL import Image, ImageOps
 import os
 
-from .base62 import Base62
+from m4ed.util import Base62
 
 WHITELIST = ['GIF', 'PNG', 'JPEG', 'BMP']
 
@@ -20,7 +20,8 @@ class ImageProcessor(object):
         cntr = self.db.counters.find_and_modify(
             query={'_id': 'imgId'},
             update={'$inc': {'c': 1}},
-            upsert=True
+            upsert=True,
+            safe=True
         )
         # If for some reason the counter collection has
         # no imgId entry, the find_and_modify returns
@@ -119,7 +120,6 @@ def _split_gif(im, output_filename, output_path, thumb_size=(90, 90)):
                 )
             frames += 1
         else:
-            print 'derp'
             full_output_path = os.path.join(
                 output_path, '{index}_{filename}'.format(
                     filename=output_filename, index=i))

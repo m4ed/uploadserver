@@ -4,9 +4,8 @@ import pymongo
 import os
 import threading
 
-from bson.objectid import ObjectId
+from bson import ObjectId
 
-from util.cloud import Cloud
 from util.settings import parse_asset_settings
 
 try:
@@ -43,7 +42,8 @@ def main():
     db = conn[settings['db.mongo.collection_name']]
 
     print '\n\nInitializing cloud connection...'
-    cloud = Cloud(**settings)
+    cloud = settings['service'](**settings)
+    cloud.connect()
 
     save_path = settings['save_path']
 
@@ -81,6 +81,8 @@ class UploadWorker(threading.Thread):
         self.cloud = cloud
 
         self.socket = context.socket(zmq.PULL)
+        # Setting linger to 0 kills the socket right away when
+        # it's closed and context is terminated
         self.socket.setsockopt(zmq.LINGER, 0)
         self.socket.connect(worker_url)
 
@@ -106,10 +108,21 @@ class UploadWorker(threading.Thread):
             getattr(self, args[0])(args[1])
 
     def save(self, _id):
-        asset = self.db.assets.find_one({'_id': ObjectId(_id)})
+        asset = self.db.assets.find_and_modify(
+            query={'_id': ObjectId(_id), 'status': 'local'},
+            update={'$set': {'status': 'processing'}}
+        )
+
+        # If there is no asset returned, assume it has been deleted
+        # before it entered the queue
+        if not asset:
+            return
+
         self._print(asset)
         name = asset.get('name')
         directory = asset.get('id')
+        _type = asset.get('type')
+        format = asset.get('format')
         thumb_name = '_s.'.join(name.rsplit('.', 1))
         full_save_path = os.path.join(
             self.save_path, directory, name
@@ -118,28 +131,61 @@ class UploadWorker(threading.Thread):
             self.save_path, directory, thumb_name
         )
 
-        url = self.cloud.save(full_save_path)
+        url = self.cloud.save(
+            path=full_save_path,
+            _type=_type,
+            format=format
+        )
         os.unlink(full_save_path)
-        thumb_url = self.cloud.save(thumb_save_path)
-        os.unlink(thumb_save_path)
+        thumb_url = self.cloud.save(
+            path=thumb_save_path,
+            _type=_type,
+            format=format
+        )
+        #os.unlink(thumb_save_path)
 
-        if asset.get('type') == 'anim':
+        if _type == 'anim':
             for x in range(1, asset.get('frames')):
                 p = os.path.join(
                     self.save_path, directory, '{}_{}'.format(x, name)
                 )
-                self.cloud.save(p)
+                self.cloud.save(
+                    path=p,
+                    _type=_type,
+                    format=format
+                )
                 os.unlink(p)
 
-        os.rmdir(os.path.join(self.save_path, directory))
+        #os.rmdir(os.path.join(self.save_path, directory))
 
-        self.db.assets.update(
-            {'_id': ObjectId(_id)},
-            {'$set': {'url': url, 'thumbnail_url': thumb_url}}
+        result = self.db.assets.find_and_modify(
+            query={'_id': ObjectId(_id)},
+            update={'$set': {
+                'url': url,
+                'thumbnail_url': thumb_url,
+                'status': 'cloud'
+                }},
+            safe=True
         )
 
+        # If for some strange reason the object is not returned from mongo
+        # assume it has been deleted by someone while it was uploading.
+        # 'Revert' the changes by deleting the files from cloud.
+        if not result:
+            self._cloud_delete(name)
+
     def delete(self, _id):
-        raise NotImplementedError
+        asset = self.db.assets.find_and_modify(
+            query={'_id': ObjectId(_id)},
+            remove=True,
+            safe=True
+        )
+        self._print('Proceeding to delete ' + str(asset))
+        if asset and asset.get('status') == 'cloud':
+            self._cloud_delete(asset.get('name'))
+
+    def _cloud_delete(self, name):
+        self.cloud.delete(name)
 
 
 if __name__ == '__main__':
